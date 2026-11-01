@@ -1,25 +1,30 @@
 # NEON GALLERY 3D — Credits & Attribution
 
-## Project
+**Two people and two AI models contributed to this project.**
 
-**NEON GALLERY 3D** is an experimental Go-powered interactive 3D gallery using Three.js and locally generated SVG poster artwork.
+## People
 
-- **Project direction, testing, curation and GitHub publication:** [Fort-fog](https://github.com/Fort-fog)
-- **Original project repository:** [Fort-fog/NEON_GALLERY](https://github.com/Fort-fog/NEON_GALLERY)
-- **AI-assisted implementation and SVG generation:** Qwen3.8-Flash-Next (IQ3_S / GSQ-RCO), operated locally in STRATA
-- **STRATA software and inference runtime:** [Niko1221 / Strata](https://github.com/Niko1221/Strata)
+- **[Fort-fog](https://github.com/Fort-fog)** — project idea, direction, task definition, testing, visual evaluation, and GitHub publication.
+- **[Niko1221](https://github.com/Niko1221)** — developer of **[STRATA](https://github.com/Niko1221/Strata)**, the local AI application and inference environment used for the project.
 
-## When reusing this gallery
+## AI models and assistants
 
-Please credit the project and retain a link to the original source:
+- **Qwen3.8-Flash-Next (IQ3_S / GSQ-RCO)** — generated the Go application, Three.js gallery interface, and procedural SVG poster generator; performed iterative fixes and browser checks through STRATA.
+- **OpenAI ChatGPT (GPT-6)** — helped prepare the development task, interpret diagnostics, provide technical guidance, and guide GitHub publication.
 
-> NEON GALLERY 3D — project by Fort-fog, developed with Qwen3.8-Flash-Next using STRATA by Niko1221. Source: https://github.com/Fort-fog/NEON_GALLERY
+## Original project
 
-This attribution is a requested credit statement, not a substitute for a software license. Reuse permissions are governed by the licenses actually present in the repository and its dependencies.
+**NEON GALLERY 3D** — [Fort-fog/NEON_GALLERY](https://github.com/Fort-fog/NEON_GALLERY)
 
-## Third-party software
+When presenting or reusing this gallery design, please acknowledge the project and link to the original repository:
 
-- **Three.js** is an independent third-party library. Preserve its applicable license and copyright notice when redistributing the vendored `static/vendor/three.min.js` file.
-- **STRATA** is a separate project and is not bundled as part of the NEON GALLERY application.
+> NEON GALLERY 3D — a project by Fort-fog, built with Qwen3.8-Flash-Next in STRATA by Niko1221, with technical assistance from OpenAI ChatGPT (GPT-6). Source: https://github.com/Fort-fog/NEON_GALLERY
 
-The gallery project is not affiliated with or officially endorsed by the STRATA project or the Qwen model developers.
+This credit request does **not** establish a software license or additional legal reuse conditions. Applicable permissions depend on the licenses included in the repository and its dependencies.
+
+## Third-party components
+
+- **Three.js** is third-party software. Preserve its applicable copyright and license notices when distributing the vendored `static/vendor/three.min.js` file.
+- **STRATA** is separate software and is not included in NEON GALLERY 3D.
+
+This is an independent project, not an official project of STRATA, Qwen, or OpenAI.
