@@ -13,9 +13,17 @@
   const CARD_H = Math.round((CARD_W * 800) / 1200);   // posters are 3:2
   const GAP = 46;
   const FLOOR_Y = -1150;
-  const TEX_W = 960;                                  // card texture width
+  // a phone held sideways (932x430) is the same hardware as the same phone
+  // held upright: both need smaller textures and a lighter scene than a
+  // desktop browser
+  const PHONE = window.innerWidth < 760 || (window.innerWidth < 1100 && window.innerHeight < 560);
+  const TEX_W = PHONE ? 720 : 960;                     // card texture width
   const TEX_H = Math.round((TEX_W * 800) / 1200);
   const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const COARSE = window.matchMedia('(pointer: coarse)').matches;
+  const TAP_SLACK = COARSE ? 12 : 8;                   // fingers wobble more than a mouse
+  const DRAG_YAW = COARSE ? 0.0068 : 0.0055;
+  const DRAG_PITCH = COARSE ? 0.005 : 0.004;
 
   // fit: margin multiplier applied when the composition box is framed by the camera
   const LAYOUTS = {
@@ -173,6 +181,8 @@
   }
 
   // --------------------------------------------------------- lightbox
+  let lastSwipe = 0;   // a finished swipe must not also count as a tap
+
   function openLightbox(index) {
     if (!state.items.length) return;
     state.view = clamp(index, 0, state.items.length - 1);
@@ -220,6 +230,7 @@
       img.loading = 'lazy';
       t.appendChild(img);
       t.addEventListener('click', () => {
+        if (performance.now() - lastSwipe < 250) return;   // finger was swiping, not tapping
         state.view = i;
         renderLightbox();
       });
@@ -467,18 +478,29 @@
       const n = cards.length;
       if (!n) return;
 
+      // a phone screen is narrower than the world radius designed for a
+      // desktop monitor: pull the layouts closer so frames stay readable
+      const narrow = window.innerWidth < 760 || (window.innerWidth < 1000 && window.innerHeight < 560);
+      const R = cfg.radius * (narrow ? (cfg.kind === 'shell' ? 0.66 : 0.86) : 1);
+      const ratio = clearScreenRatio();
+      // lay the wall out for the shape of the free area, not of the raw canvas
+      const boxAspect = clamp(window.innerWidth / (window.innerHeight * ratio), 0.75, 2);
+      // a phone held sideways leaves a very short free band: a flat, wide
+      // grid keeps the frames big instead of stacking them into the HUD
+      const shortBand = window.innerWidth > window.innerHeight && ratio < 0.65;
+
       cards.forEach((card) => {
         const k = state.order[card.rank] ?? card.rank;
         card.billboard = cfg.kind === 'shell';
 
         if (cfg.kind === 'ring') {
           // two stacked tiers so the carousel reads as a volume, not a flat hoop
-          const tiers = n > 8 ? 2 : 1;
+          const tiers = n > 8 && !shortBand ? 2 : 1;
           const perTier = Math.ceil(n / tiers);
           const tier = Math.floor(k / perTier);
           const idx = k % perTier;
           const inTier = Math.min(perTier, n - tier * perTier);
-          const radius = Math.max(cfg.radius, (inTier * (CARD_W + GAP)) / (Math.PI * 2) * 1.12);
+          const radius = Math.max(R, (inTier * (CARD_W + GAP)) / (Math.PI * 2) * 1.12);
           const a = (idx / inTier) * Math.PI * 2 + tier * (Math.PI / inTier);
           card.targetPos.set(
             Math.sin(a) * radius,
@@ -492,26 +514,27 @@
           const y = 1 - (k / Math.max(1, n - 1)) * 1.35;
           const rr = Math.sqrt(Math.max(0.08, 1 - y * y));
           const th = golden * k;
-          const radius = cfg.radius + (k % 3) * 250;
+          const radius = R + (k % 3) * 250;
           card.targetPos.set(Math.cos(th) * rr * radius, y * radius * 0.8, Math.sin(th) * rr * radius);
           card.targetScale = 0.9 + (k % 3) * 0.06;
           // orientation is recomputed every frame so floating cards never turn their back
         } else {
-          const cols = clamp(Math.round(Math.sqrt(n * clamp(camera.aspect, 0.75, 2) * 1.25)), 3, cfg.columns);
+          const cap = shortBand ? Math.ceil(n / 2) : cfg.columns;
+          const cols = clamp(shortBand ? cap : Math.round(Math.sqrt(n * boxAspect * 1.25)), 3, cap);
           const rows = Math.ceil(n / cols);
-          const spread = Math.min(0.42, (CARD_W + GAP) / cfg.radius);
+          const spread = Math.min(0.42, (CARD_W + GAP) / R);
           const row = Math.floor(k / cols);
           const col = k % cols;
           const inRow = Math.min(cols, n - row * cols);   // keeps a ragged row centred
           const a = (col - (inRow - 1) / 2) * spread;
           const y = (((rows - 1) / 2) - row) * (CARD_H + GAP + 30);
-          card.targetPos.set(Math.sin(a) * cfg.radius, y, Math.cos(a) * cfg.radius);
+          card.targetPos.set(Math.sin(a) * R, y, Math.cos(a) * R);
           card.targetQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), a);
           card.targetScale = 1;
         }
       });
 
-      // frame the composition: fit its bounding box into the viewport
+      // bounding box of the whole composition
       const box = new THREE.Box3();
       const half = new THREE.Vector3(CARD_W / 2, CARD_H / 2 + 60, 60);
       cards.forEach((c) => {
@@ -522,16 +545,40 @@
       box.getSize(size);
       box.getCenter(focusT);
 
-      const vHalf = Math.tan((camera.fov * Math.PI) / 360);
-      const hHalf = vHalf * camera.aspect;
+      // frame the composition inside the part of the screen the user can
+      // actually see: on phones the HUD panels float above the canvas and
+      // were hiding the outer rows of frames. Only the vertical extent is
+      // reduced, the HUD never covers the sides.
+      const tan = Math.tan((camera.fov * Math.PI) / 360);
       const dist = Math.max(
-        size.y / (2 * vHalf),
-        size.x / (2 * hHalf),
-        size.z / (2 * vHalf),
+        size.y / (2 * tan * ratio),
+        size.x / (2 * tan * camera.aspect),
+        size.z / (2 * tan * ratio),
       ) * cfg.fit;
 
       fitDist = clamp(dist, 1200, 7000);
-      orbit.distT = fitDist;
+      if (!userZoomed) orbit.distT = fitDist;
+    }
+
+    // fraction of the viewport height that is not covered by the HUD.
+    // On desktop the panels are corner overlays that the composition is
+    // designed to sit behind; on phones (portrait or sideways) they are
+    // full width bars, so the scene has to fit between them.
+    function clearScreenRatio() {
+      if (window.innerWidth > 860 && window.innerHeight > 560) return 1;
+      const w = window.innerWidth || 1;
+      const h = window.innerHeight || 1;
+      let top = 0;
+      let bottom = h;
+      const bar = document.querySelector('.hud.top');
+      const panel = document.getElementById('readout');
+      if (bar) top = Math.max(0, bar.getBoundingClientRect().bottom) + 8;
+      if (panel) {
+        const r = panel.getBoundingClientRect();
+        if (r.width > w * 0.6) bottom = Math.min(bottom, Math.max(top, r.top - 8));
+      }
+      if (bottom - top < h * 0.45) return 1;
+      return clamp((bottom - top) / h, 0.35, 1);
     }
 
     function setLayout(name) {
@@ -551,6 +598,7 @@
     function resetView() {
       orbit.thetaT = 0;
       orbit.phiT = 1.22;
+      userZoomed = false;
       orbit.distT = fitDist;
       layout();
     }
@@ -563,6 +611,7 @@
     let dragging = false;
     let travelled = 0;
     let pinch = 0;
+    let userZoomed = false;     // once the user zooms, a window resize keeps his distance
 
     const pinchWidth = () => {
       const [a, b] = [...active.values()];
@@ -577,7 +626,8 @@
         document.body.classList.add('is-dragging');
       }
       if (active.size === 2) pinch = pinchWidth();
-      dom.canvas.setPointerCapture(e.pointerId);
+      // capture is best effort: a pointer can already be gone on touch devices
+      try { dom.canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     });
 
     dom.canvas.addEventListener('pointermove', (e) => {
@@ -592,19 +642,22 @@
 
       if (active.size === 2) {
         const width = pinchWidth();
-        if (pinch > 0) orbit.distT = clamp(orbit.distT * (pinch / width), 900, 7000);
+        if (pinch > 0) {
+          orbit.distT = clamp(orbit.distT * (pinch / width), 900, 7000);
+          userZoomed = true;
+        }
         pinch = width;
         return;
       }
       if (dragging) {
         travelled += Math.abs(dx) + Math.abs(dy);
-        orbit.thetaT -= dx * 0.0055;
-        orbit.phiT = clamp(orbit.phiT - dy * 0.004, 0.45, 1.45);
+        orbit.thetaT -= dx * DRAG_YAW;
+        orbit.phiT = clamp(orbit.phiT - dy * DRAG_PITCH, 0.45, 1.45);
       }
     });
 
     function releasePointer(e) {
-      const tapped = dragging && travelled <= 8;
+      const tapped = dragging && travelled <= TAP_SLACK;
       active.delete(e.pointerId);
       if (active.size !== 0) return;
       dragging = false;
@@ -629,6 +682,7 @@
     dom.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       orbit.distT = clamp(orbit.distT * Math.exp(e.deltaY * 0.0009), 900, 7000);
+      userZoomed = true;
     }, { passive: false });
 
     function cardUnderPointer() {
@@ -889,7 +943,10 @@
     dom.lbClose.addEventListener('click', closeLightbox);
     dom.lbPrev.addEventListener('click', () => stepLightbox(-1));
     dom.lbNext.addEventListener('click', () => stepLightbox(1));
-    dom.lightbox.querySelector('.lb-backdrop').addEventListener('click', closeLightbox);
+    dom.lightbox.querySelector('.lb-backdrop').addEventListener('click', () => {
+      if (performance.now() - lastSwipe < 250) return;   // swipe across the backdrop, not a dismiss
+      closeLightbox();
+    });
 
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -923,7 +980,10 @@
       swiping = false;
       const dx = e.clientX - swipeX;
       const dy = e.clientY - swipeY;
-      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) stepLightbox(dx < 0 ? 1 : -1);
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+        lastSwipe = performance.now();
+        stepLightbox(dx < 0 ? 1 : -1);
+      }
     });
   }
 
@@ -932,6 +992,25 @@
       [{ transform: 'scale(1)' }, { transform: 'scale(0.94)' }, { transform: 'scale(1)' }],
       { duration: 240, easing: 'ease-out' },
     );
+  }
+
+  // touch screens never hover and have no keyboard, so the idle copy and the
+  // hint strip have to describe gestures instead of a mouse
+  function touchCopy() {
+    if (dom.roTitle && dom.roTitle.textContent.indexOf('Наведите') === 0) {
+      dom.roTitle.textContent = 'Коснитесь кадра';
+    }
+    if (dom.roDesc) {
+      dom.roDesc.textContent = 'Свайп по сцене — осмотреться, щепотка — приблизить. Касание открывает кадр.';
+    }
+    const hints = document.querySelector('.hints');
+    if (hints) {
+      hints.innerHTML =
+        '<span><b>swipe</b> look around</span>' +
+        '<span><b>pinch</b> zoom</span>' +
+        '<span><b>tap</b> open</span>' +
+        '<span class="dim">/api/gallery · go</span>';
+    }
   }
 
   // --------------------------------------------------------------- boot
@@ -948,6 +1027,7 @@
       buildChips(state.categories, data.items);
       updateCounter(data.count, data.total);
       wireUI();
+      if (COARSE) touchCopy();
 
       if (typeof THREE === 'undefined') {
         console.error('[neongallery] three.js is unavailable, switching to flat gallery');
