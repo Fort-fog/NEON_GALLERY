@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070f">
+<meta name="description" content="Неон фотогалерея 3D — интерактивная неоновая галерея на Three.js с Go-бэкендом.">
+<title>NEON GALLERY 3D — неоновая фотогалерея</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- загрузочный экран -->
+<div class="boot" id="boot">
+  <div class="boot-inner">
+    <div class="boot-mark"><span>NEON</span><i></i><span>GALLERY</span></div>
+    <div class="boot-sub">3D&nbsp;PHOTO&nbsp;GALLERY&nbsp;//&nbsp;SECTOR&nbsp;07</div>
+    <div class="boot-bar"><div class="boot-bar-fill" id="bootBarFill"></div></div>
+    <div class="boot-status" id="bootStatus">инициализация сцены…</div>
+  </div>
+  <div class="boot-grid" aria-hidden="true"></div>
+</div>
+
+<!-- 3D-сцена -->
+<canvas id="scene" aria-label="Трёхмерная неоновая галерея"></canvas>
+<div class="atmos" aria-hidden="true"></div>
+<div class="scanlines" aria-hidden="true"></div>
+
+<!-- верхняя панель HUD -->
+<header class="hud top">
+  <div class="brand">
+    <span class="brand-mark">◈</span>
+    <span class="brand-text">NEON<b>GALLERY</b><em>3D</em></span>
+  </div>
+
+  <div class="search">
+    <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
+    <input id="search" type="search" placeholder="Поиск: title, author, category…" autocomplete="off" spellcheck="false" aria-label="Поиск по галерее">
+    <kbd>/</kbd>
+  </div>
+
+  <div class="filters">
+    <nav class="chips" id="chips" aria-label="Фильтр по категориям"></nav>
+    <div class="counter" id="counter" aria-live="polite">
+      <span class="counter-now" id="counterNow">00</span>
+      <span class="counter-sep">/</span>
+      <span class="counter-total" id="counterTotal">00</span>
+      <span class="counter-label">frames</span>
+    </div>
+  </div>
+
+  <div class="tools">
+    <div class="segment" id="layouts" role="group" aria-label="Раскладка галереи">
+      <button type="button" data-layout="wall" class="on">Wall</button>
+      <button type="button" data-layout="carousel">Carousel</button>
+      <button type="button" data-layout="float">Float</button>
+    </div>
+    <button type="button" class="ghost" id="btnShuffle" title="Перемешать раскладку">Shuffle</button>
+    <button type="button" class="ghost" id="btnReset" title="Сбросить камеру">Reset</button>
+    <button type="button" class="ghost orbit on" id="btnOrbit" title="Автоповорот камеры" aria-pressed="true">Auto<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a7 7 0 1 1-7 7"/><path d="M5 12V7"/><path d="M2.6 9.6 5 7l2.4 2.6"/></svg></button>
+  </div>
+</header>
+
+<!-- панель фокуса -->
+<aside class="hud readout" id="readout">
+  <div class="readout-index" id="roIndex">—</div>
+  <h2 class="readout-title" id="roTitle">Наведите курсор на кадр</h2>
+  <p class="readout-desc" id="roDesc">Перетаскивайте сцену, чтобы осмотреться. Клик открывает полноэкранный просмотр.</p>
+  <div class="readout-meta">
+    <span class="tag" id="roCat">NEON GALLERY</span>
+    <span class="dot">•</span>
+    <span id="roAuthor">—</span>
+    <span class="dot">•</span>
+    <span id="roYear">—</span>
+  </div>
+</aside>
+
+<!-- подсказки управления -->
+<footer class="hud hints">
+  <span><b>drag</b> rotate</span>
+  <span><b>wheel</b> zoom</span>
+  <span><b>click</b> open</span>
+  <span><b>← →</b> prev / next</span>
+  <span><b>esc</b> close</span>
+  <span class="dim">/api/gallery · go</span>
+</footer>
+
+<!-- полноэкранный просмотр -->
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр кадра" hidden>
+  <div class="lb-backdrop" data-close></div>
+  <button type="button" class="lb-btn lb-close" id="lbClose" title="Закрыть (Esc)" aria-label="Закрыть">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <button type="button" class="lb-btn lb-prev" id="lbPrev" title="Назад (←)" aria-label="Предыдущий кадр">
+    <svg viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></svg>
+  </button>
+  <button type="button" class="lb-btn lb-next" id="lbNext" title="Вперёд (→)" aria-label="Следующий кадр">
+    <svg viewBox="0 0 24 24"><path d="M10 6l6 6-6 6"/></svg>
+  </button>
+
+  <figure class="lb-stage">
+    <div class="lb-frame">
+      <img id="lbImg" alt="" decoding="async">
+      <div class="lb-glow" id="lbGlow" aria-hidden="true"></div>
+    </div>
+    <figcaption class="lb-caption glass">
+      <div class="lb-head">
+        <h3 id="lbTitle">—</h3>
+        <span class="lb-count" id="lbCount">00 / 00</span>
+      </div>
+      <p id="lbDesc">—</p>
+      <div class="lb-meta">
+        <span class="tag" id="lbCat">—</span>
+        <span id="lbAuthor">—</span>
+        <span id="lbYear">—</span>
+      </div>
+      <div class="lb-strip" id="lbStrip" aria-label="Лента кадров"></div>
+    </figcaption>
+  </figure>
+</div>
+
+<noscript>
+  <div class="noscript">Для работы галереи нужен JavaScript. Данные API доступны по адресу <code>/api/gallery</code>.</div>
+</noscript>
+
+<script src="vendor/three.min.js"></script>
+<script src="pages-api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
